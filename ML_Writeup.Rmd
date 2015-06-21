@@ -1,0 +1,117 @@
+---
+title: "Practical Machine Learning"
+author: "Raul Goycoolea"
+date: "June 21, 2015"
+output: html_document
+---
+
+##Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks.
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+```{r warning=FALSE, message=FALSE}
+library(doParallel)
+library(Hmisc)
+library(randomForest)
+library(foreach)
+library(caret)
+set.seed(2048)
+
+```
+
+##Data 
+
+I manualy download the training and test data from the links provided:
+
+The training data for this project are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment. 
+
+
+```{r}
+training_data <- read.csv("pml-training.csv", na.strings=c("#DIV/0!") )
+evaluation_data <- read.csv("pml-testing.csv", na.strings=c("#DIV/0!") )
+```
+
+Now fix columns to end with an numeric value
+
+```{r warning=FALSE}
+
+for(i in c(8:ncol(training_data)-1)) {training_data[,i] = as.numeric(as.character(training_data[,i]))}
+for(i in c(8:ncol(evaluation_data)-1)) {evaluation_data[,i] = as.numeric(as.character(evaluation_data[,i]))}
+
+```
+
+There's some columns without a value and give some troble with the prediction algorithms, with this code I removed the unwanted data as well as time data
+
+```{r}
+feature_set <- colnames(training_data[colSums(is.na(training_data)) == 0])[-(1:7)]
+model_data <- training_data[feature_set]
+feature_set
+```
+
+Now try to generate the data model
+
+```{r}
+idx <- createDataPartition(y=model_data$classe, p=0.75, list=FALSE )
+training <- model_data[idx,]
+testing <- model_data[-idx,]
+```
+
+Generate random forrests with 150 trees. I used the doParallel package to try to speed up the calculations. This is the more CPU consuming part of the project
+
+```{r}
+registerDoParallel()
+x <- training[-ncol(training)]
+y <- training$classe
+
+rf <- foreach(ntree=rep(150, 6), .combine=randomForest::combine, .packages='randomForest') %dopar% {
+randomForest(x, y, ntree=ntree) 
+}
+```
+
+
+Get error for the data sets
+
+```{r}
+predictions1 <- predict(rf, newdata=training)
+confusionMatrix(predictions1,training$classe)
+
+
+predictions2 <- predict(rf, newdata=testing)
+confusionMatrix(predictions2,testing$classe)
+```
+
+##Prediction Assignment Submission: Instructions
+
+Please apply the machine learning algorithm you built to each of the 20 test cases in the testing data set. For more information and instructions on how to build your model see the prediction assignment writeup. For each test case you should submit a text file with a single capital letter (A, B, C, D, or E) corresponding to your prediction for the corresponding problem in the test data set. You get 1 point for each correct answer. You may submit up to 2 times for each problem. I know it is a lot of files to submit. It may be helpful to use the following function to create the files. If you have a character vector with your 20 predictions in order for the 20 problems.
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+
+x <- evaluation_data
+x <- x[feature_set[feature_set!='classe']]
+answers <- predict(rf, newdata=x)
+
+answers
+
+pml_write_files(answers)
+```
+
+
+
